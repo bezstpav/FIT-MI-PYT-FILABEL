@@ -6,16 +6,9 @@ import fnmatch
 import sys
 
 
-class Context:
-    def __init__(self, state, delete, base, auth, label, reposlug):
-        self.state = state
-        self.delete = delete
-        self.base = base
-        self.auth = auth
-        self.label = label
-        self.labels = {}
-        self.reposlug = reposlug
-        self.token = ""
+# Format all OK,FAIL,PR,REPO words
+# return string with click style
+
 
 def format(text):
     text = text.lower()
@@ -29,6 +22,9 @@ def format(text):
         return click.style('REPO', bold=True)
     else:
         raise Exception("Unkown text")
+
+# Match file with label rules
+# return list
 
 
 def getLabels(source, path):
@@ -50,6 +46,8 @@ class GitHub:
         self.token = token
         self.session = self.createSession()
 
+    # Create session with predefined github auth header
+    # return session
     def createSession(self):
         session = requests.Session()
 
@@ -59,6 +57,7 @@ class GitHub:
         session.auth = token_auth
         return session
 
+    # Process labels for selected repo
     def processRepo(self, user, repo, state, base, labels, delete):
         try:
 
@@ -73,6 +72,8 @@ class GitHub:
             click.echo("{} {} - {}".format(format("repo"),
                                            F"{user}/{repo}", format("fail")))
 
+    # Get pull request for repo
+    # Return pull request object
     def getPR(self, user, repo, state, base):
 
         reqParams = {'state': state, 'per_page': 100}
@@ -96,6 +97,7 @@ class GitHub:
 
             url = response.links["next"]["url"]
 
+    # Process label for selected pull request
     def processPR(self, pr, labels, delete):
         try:
             files = self.getPRFiles(pr)
@@ -146,6 +148,8 @@ class GitHub:
             click.echo("  {} {} - {}".format(format("pr"),
                                              pr['html_url'], format("fail")))
 
+    # Replace old labels for pull request
+
     def updateLabels(self, pr, labels):
         data = list(labels)
         url = F"{pr['issue_url']}/labels"
@@ -153,6 +157,8 @@ class GitHub:
         if not response.ok:
             raise Exception("Update labels failed")
 
+    # Get files assosciated with pull requst
+    # return file objects
     def getPRFiles(self, pr):
         url = F"{pr['url']}/files"
         files = []
@@ -171,26 +177,32 @@ class GitHub:
             url = response.links["next"]["url"]
 
 
-def parseConfigs(context):
+# Parse auth config
+def loadAuth(path):
     try:
         config = configparser.ConfigParser()
-        config.read(context.auth.name)
-        context.token = config['github']['token']
+        config.read(path)
+        return config['github']['token']
     except:
         print("Auth configuration not usable!", file=sys.stderr)
         sys.exit(1)
 
+
+# Parse labels config
+def loadLabels(path):
     try:
         config = configparser.ConfigParser()
-        config.read(context.label.name)
+        config.read(path)
 
-        context.labels = {key: config['labels'][key].strip().split('\n') for key in config['labels'].keys()}
+        return {key: config['labels'][key].strip().split(
+            '\n') for key in config['labels'].keys()}
 
     except:
         print('Labels configuration not usable!', file=sys.stderr)
         sys.exit(1)
 
 
+# Parse reposlugs
 def parseReposlugs(reposlugs):
     result = []
     for reposlug in reposlugs:
@@ -203,23 +215,22 @@ def parseReposlugs(reposlugs):
 
 
 @click.command()
-@click.option('-s', '--state', type=click.Choice(['open', 'closed', 'all']),show_default=True, default='open', help='Filter pulls by state.')
-@click.option('-d/-D', '--delete-old/--no-delete-old', 'delete',show_default=True, default=True, help='Delete labels that do not match anymore.')
-@click.option('-b', '--base','branch', default=None,metavar="BRANCH", help='Filter pulls by base (PR target) branch name.')
+@click.option('-s', '--state', type=click.Choice(['open', 'closed', 'all']), show_default=True, default='open', help='Filter pulls by state.')
+@click.option('-d/-D', '--delete-old/--no-delete-old', 'delete', show_default=True, default=True, help='Delete labels that do not match anymore.')
+@click.option('-b', '--base', 'branch', default=None, metavar="BRANCH", help='Filter pulls by base (PR target) branch name.')
 @click.option('-a', '--config-auth', 'auth', type=click.File('rb'), required=True, help='File with authorization configuration.')
 @click.option('-l', '--config-labels', 'label', type=click.File('rb'), required=True, help=' File with labels configuration.')
 @click.argument('reposlugs', nargs=-1)
 def main(state, delete, branch, auth, label, reposlugs):
     """CLI tool for filename-pattern-based labeling of GitHub PRs"""
     reposlug = parseReposlugs(reposlugs)
-    context = Context(state, delete, branch, auth, label, reposlug)
-    parseConfigs(context)
 
-    github = GitHub(context.token)
+    token = loadAuth(auth.name)
+    labels = loadLabels(label.name)
+    github = GitHub(token)
 
     for item in reposlug:
-        github.processRepo(item[0], item[1], state,
-                           branch, context.labels, delete)
+        github.processRepo(item[0], item[1], state, branch, labels, delete)
 
 
 if __name__ == '__main__':
