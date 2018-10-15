@@ -293,7 +293,7 @@ def webhool_load():
     parseConfigsFromEnv()
 
 
-@app.route('/')
+@app.route('/',methods=['GET'])
 def index():
     return flask.render_template('index.html', name=app.github.username,labels = app.labels)
 
@@ -310,9 +310,10 @@ def label(reposlug):
     try:
         app.github.processRepo(tmp[0], tmp[1], None, None, app.labels, False)
     except Exception as err:
-        raise HTTPException(err.message)
+        raise HTTPException(str(err))
 
-@app.route('/webhook',methods=['POST','GET'])
+@app.route('/',methods=['POST'])
+@app.route('/webhook',methods=['POST'])
 def webhook():
     
     if not flask.request.is_json:
