@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Filabel web edition</title>
+</head>
+
+<body>
+    <h1>Github user - {{ name }} </h1>
+    <hr>
+    <h2>Labels definition</h2>
+    <ul>
+        {% for key,value in labels.items() %}
+        <li>{{key}}</li>
+        <ul>
+            {% for label in value %}
+            <li>{{label}}</li>
+            {% endfor %}
+        </ul>
+        {% endfor %}
+    </ul>
+</body>
+
+</html>
