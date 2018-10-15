@@ -255,13 +255,9 @@ app = flask.Flask(__name__)
 
 def parseConfigsFromEnv():
     token=None
+    secret=None
     labels={}
-    webhookSecret = os.environ['WEBHOOK_SECRET']
-
-    if webhookSecret is None:
-        raise Exception('Missing env WEBHOOK_SECRET') 
-
-
+    
     if 'FILABEL_CONFIG' not in os.environ:
         raise Exception('Missing env FILABEL_CONFIG') 
 
@@ -272,6 +268,7 @@ def parseConfigsFromEnv():
             config.read(file)
             if 'github' in config:
                 token = config['github']['token']
+                secret = config['github']['secret']
             elif 'labels' in config:
                 for key in config['labels'].keys():
                     labels[key] = config['labels'][key].strip().split('\n')
@@ -283,7 +280,7 @@ def parseConfigsFromEnv():
 
     app.github = GitHub(token)
     app.labels = labels
-    app.webhookSecret = webhookSecret
+    app.webhookSecret = secret
 
 class HTTPException(Exception):
     def __init__(self,message,code=400):
