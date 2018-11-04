@@ -1,6 +1,18 @@
-# filabel Homework
+# module Homework
 
-https://github.com/cvut/filabel/tree/web
+https://github.com/cvut/filabel/tree/modular
+
+## Pypi
+https://test.pypi.org/project/filabel-bezstpav/
+
+## Module build
+
+```
+python setup.py bdist_wheel
+python setup.py sdist
+```
+
+
 
 ## Help
 
