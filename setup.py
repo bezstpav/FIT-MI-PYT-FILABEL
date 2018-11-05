@@ -1,13 +1,13 @@
 from setuptools import setup, find_packages
 
 
-with open('readme.md') as f:
+with open('README.rst') as f:
     long_description = ''.join(f.readlines())
 
 
 setup(
     name='filabel-bezstpav',
-    version='0.7',
+    version='0.3.1',
     description='PRs label tool',
     long_description=long_description,
     author='Pavel Bezstarosti',
