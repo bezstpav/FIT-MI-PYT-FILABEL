@@ -4,10 +4,14 @@ import configparser
 import requests
 import fnmatch
 import sys
+import asyncio
+import aiohttp
+import re
+from urllib import parse
+
 
 # Match file with label rules
 # return list
-
 def getLabels(source, path):
     result = []
     for label, patterns in source.items():
@@ -17,9 +21,30 @@ def getLabels(source, path):
                 break
     return result
 
+
+def getPagesAddress(next, last):
+    try:
+        parsed = parse.urlparse(str(next))
+        nextPage = int(parse.parse_qs(
+            parse.urlparse(str(next)).query)["page"][0])
+        lastPage = int(parse.parse_qs(
+            parse.urlparse(str(last)).query)["page"][0])
+        query = parse.parse_qs(parse.urlparse(str(next)).query)
+        query = {key: query[key][0] for key in query}
+        address = []
+        for i in range(nextPage, lastPage+1):
+            query["page"] = str(i)
+            url = "{}://{}{}?{}".format(parsed.scheme, parsed.netloc,
+                                        parsed.path, parse.urlencode(query))
+            address.append(url)
+        return address
+    except Exception as err:
+        print(err)
+
 # Format all OK,FAIL,PR,REPO words
 # return string with click style
- 
+
+
 def format(text):
     text = text.lower()
     if text == "ok":
@@ -34,8 +59,6 @@ def format(text):
         raise Exception("Unkown text")
 
 
-
-
 class GitHub:
 
     BASE_URL = "https://api.github.com/"
@@ -43,16 +66,15 @@ class GitHub:
 
     def __init__(self, token):
         self.token = token
-        self.session = self.createSession()
         self.getUserName()
 
     # Get UserName From token
     def getUserName(self):
-        response = self.session.get(self.BASE_URL+"user")
+        response = self.createSession().get(self.BASE_URL+"user")
         if not response.ok:
             raise Exception("Cannot get username")
-        self.username = response.json()['login'];
-    
+        self.username = response.json()['login']
+
     # Create session with predefined github auth header
     # return session
     def createSession(self):
@@ -64,24 +86,35 @@ class GitHub:
         session.auth = token_auth
         return session
 
+    def createAsyncSession(self):
+        session = aiohttp.ClientSession(
+            headers={"Authorization": F'token {self.token}'}, connector=aiohttp.TCPConnector(verify_ssl=False))
+        return session
+
     # Process labels for selected repo
-    def processRepo(self, user, repo, state, base, labels, delete):
+    async def processRepo(self, user, repo, state, base, labels, delete):
+        stdout = ''
         try:
-
-            PRs = self.getPR(user, repo, state, base)
-
-            click.echo("{} {} - {}".format(format("repo"),
-                                           F"{user}/{repo}", format("ok")))
-
+            PRs = await self.getPR(user, repo, state, base)
+            stdout = "{} {} - {}".format(format("repo"),
+                                         F"{user}/{repo}", format("ok"))+'\n'
+            futures = []
             for pr in PRs:
-                self.processPR(pr, labels, delete)
+                future = asyncio.ensure_future(
+                    self.processPR(pr, labels, delete))
+                futures.append(future)
+
+            for item in futures:
+                stdout = stdout + await item
         except:
-            click.echo("{} {} - {}".format(format("repo"),
-                                           F"{user}/{repo}", format("fail")))
+            stdout = "{} {} - {}".format(format("repo"),
+                                         F"{user}/{repo}", format("fail"))+'\n'
+
+        return stdout.rstrip()
 
     # Get pull request for repo
     # Return pull request object
-    def getPR(self, user, repo, state, base):
+    async def getPR(self, user, repo, state, base):
 
         reqParams = {'per_page': 100}
         if state is not None:
@@ -93,24 +126,40 @@ class GitHub:
         url = self.BASE_URL + F"repos/{user}/{repo}/pulls"
         PRs = []
 
-        while True:
-            response = self.session.get(url, params=reqParams)
-            reqParams = {}
+        async with self.createAsyncSession() as session:
+            async with session.get(url, params=reqParams) as response:
+                reqParams = {}
+                if response.status != 200:
+                    raise Exception("PR get failed")
+                obj = await response.json()
+                PRs.extend(obj)
+                if 'next' not in response.links:
+                    return PRs
+        futures = []
+        addresses = getPagesAddress(
+            response.links['next']['url'], response.links['last']['url'])
+        for address in addresses:
+            future = asyncio.ensure_future(self.getJson(address))
+            futures.append(future)
 
-            if not response.ok:
-                raise Exception("PR get failed")
+        for future in futures:
+            PRs.extend(await future)
 
-            PRs.extend(response.json())
+        return PRs
 
-            if 'next' not in response.links:
-                return PRs
-
-            url = response.links["next"]["url"]
+    async def getJson(self, address):
+        async with self.createAsyncSession() as session:
+            async with session.get(address) as response:
+                if response.status != 200:
+                    raise Exception("Get failed")
+                return await response.json()
 
     # Process label for selected pull request
-    def processPR(self, pr, labels, delete):
+
+    async def processPR(self, pr, labels, delete):
+        stdout = ''
         try:
-            files = self.getPRFiles(pr)
+            files = await self.getPRFiles(pr)
             calculatedLabels = set()
             for file in files:
                 for label in getLabels(labels, file["filename"]):
@@ -128,10 +177,10 @@ class GitHub:
             if delete:
                 labelsFinal = labelsFinal - labelsToRemove
 
-            self.updateLabels(pr, labelsFinal)
+            await self.updateLabels(pr, labelsFinal)
 
-            click.echo("  {} {} - {}".format(format("pr"),
-                                             pr['html_url'], format("ok")))
+            stdout = "{} {} - {}".format(format("pr"),
+                                         pr['html_url'], format("ok")) + '\n'
 
             labels = []
 
@@ -149,39 +198,52 @@ class GitHub:
 
             for label in labels:
                 if label[1] == '=':
-                    click.echo("    {} {}".format(label[1], label[0]))
+                    stdout = stdout + \
+                        "  {} {}".format(label[1], label[0]) + '\n'
                 else:
-                    click.echo(click.style("    {} {}".format(
-                        label[1], label[0]), fg=label[2]))
+                    stdout = stdout + click.style("  {} {}".format(
+                        label[1], label[0]), fg=label[2]) + '\n'
 
-        except:
-            click.echo("  {} {} - {}".format(format("pr"),
-                                             pr['html_url'], format("fail")))
+        except Exception as err:
+            print(err)
+            stdout = stdout + "{} {} - {}".format(format("pr"),
+                                                  pr['html_url'], format("fail"))+'\n'
+        return stdout
 
     # Replace old labels for pull request
 
-    def updateLabels(self, pr, labels):
+    async def updateLabels(self, pr, labels):
         data = list(labels)
         url = F"{pr['issue_url']}/labels"
-        response = self.session.put(url, json=data)
-        if not response.ok:
-            raise Exception("Update labels failed")
+
+        async with self.createAsyncSession() as session:
+            async with session.put(url, json=data) as response:
+                obj = await response.text()
+                if response.status != 200:
+                    raise Exception("Update labels failed")
 
     # Get files assosciated with pull requst
     # return file objects
-    def getPRFiles(self, pr):
+    async def getPRFiles(self, pr):
         url = F"{pr['url']}/files"
         files = []
         reqParams = {'per_page': 100}
-        while True:
-            response = self.session.get(url, params=reqParams)
-            reqParams = {}
-            if not response.ok:
-                raise Exception("File get failed")
+        async with self.createAsyncSession() as session:
+            async with session.get(url, params=reqParams) as response:
+                obj = await response.json()
+                if response.status != 200:
+                    raise Exception("File get failed")
+                files.extend(obj)
+                if 'next' not in response.links:
+                    return files
 
-            files.extend(response.json())
+        futures = []
+        addresses = getPagesAddress(
+            response.links['next']['url'], response.links['last']['url'])
+        for address in addresses:
+            future = asyncio.ensure_future(self.getJson(address))
+            futures.append(future)
 
-            if 'next' not in response.links:
-                return files
-
-            url = response.links["next"]["url"]
+        for future in futures:
+            files.extend(await future)
+        return files

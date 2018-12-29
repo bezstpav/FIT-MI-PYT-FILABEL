@@ -2,9 +2,12 @@ import click
 import os
 import configparser
 import sys
+import asyncio
 from .github import GitHub
 
 # Parse auth config
+
+
 def loadAuth(path):
     try:
         config = configparser.ConfigParser()
@@ -47,14 +50,25 @@ def parseReposlugs(reposlugs):
 @click.option('-b', '--base', 'branch', default=None, metavar="BRANCH", help='Filter pulls by base (PR target) branch name.')
 @click.option('-a', '--config-auth', 'auth', type=click.File('rb'), required=True, help='File with authorization configuration.')
 @click.option('-l', '--config-labels', 'label', type=click.File('rb'), required=True, help=' File with labels configuration.')
+@click.option('-x', '--async', 'asyncFlag',  is_flag=True, help='Use asynchronnous (faster) logic.')
 @click.argument('reposlugs', nargs=-1)
-def main(state, delete, branch, auth, label, reposlugs):
+def main(state, delete, branch, auth, label, asyncFlag, reposlugs):
     """CLI tool for filename-pattern-based labeling of GitHub PRs"""
     reposlug = parseReposlugs(reposlugs)
 
     token = loadAuth(auth.name)
     labels = loadLabels(label.name)
-    github = GitHub(token)
+    
+    async def task():
+        github = GitHub(token)
+        futures=[]
+        for item in reposlug:
+            future = asyncio.ensure_future(github.processRepo(item[0], item[1], state, branch, labels, delete))
+            futures.append(future)
 
-    for item in reposlug:
-        github.processRepo(item[0], item[1], state, branch, labels, delete)
+        for item in futures:
+            click.echo(await item)
+
+    loop = asyncio.get_event_loop()
+    result = loop.run_until_complete(task())
+    loop.close()
