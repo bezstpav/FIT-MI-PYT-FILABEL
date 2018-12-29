@@ -3,7 +3,7 @@ import os
 import configparser
 import sys
 import asyncio
-from .github import GitHub
+from .github import GitHub,GitHubAsync
 
 # Parse auth config
 
@@ -60,7 +60,7 @@ def main(state, delete, branch, auth, label, asyncFlag, reposlugs):
     labels = loadLabels(label.name)
     
     async def task():
-        github = GitHub(token)
+        github = GitHubAsync(token)
         futures=[]
         for item in reposlug:
             future = asyncio.ensure_future(github.processRepo(item[0], item[1], state, branch, labels, delete))
@@ -69,6 +69,12 @@ def main(state, delete, branch, auth, label, asyncFlag, reposlugs):
         for item in futures:
             click.echo(await item)
 
-    loop = asyncio.get_event_loop()
-    result = loop.run_until_complete(task())
-    loop.close()
+    if asyncFlag:
+        loop = asyncio.get_event_loop()
+        result = loop.run_until_complete(task())
+        loop.close()
+    else:
+        github = GitHub(token)
+        for item in reposlug:
+            github.processRepo(item[0], item[1], state, branch, labels, delete)
+
