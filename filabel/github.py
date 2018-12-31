@@ -204,8 +204,7 @@ class GitHubAsync:
                     stdout = stdout + click.style("  {} {}".format(
                         label[1], label[0]), fg=label[2]) + '\n'
 
-        except Exception as err:
-            print(err)
+        except Exception:
             stdout = stdout + "{} {} - {}".format(format("pr"),
                                                   pr['html_url'], format("fail"))+'\n'
         return stdout
