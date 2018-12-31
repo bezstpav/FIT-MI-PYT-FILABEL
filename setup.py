@@ -30,7 +30,9 @@ setup(
         'click',
         'requests',
         'configparser',
-        'flask'
+        'flask',
+        'aiohttp',
+        'asyncio'
     ],
     classifiers=[
         'Development Status :: 3 - Alpha',

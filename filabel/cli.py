@@ -2,10 +2,18 @@ import click
 import os
 import configparser
 import sys
-from .github import GitHub
+import asyncio
+from .github import GitHub,GitHubAsync
 
-# Parse auth config
 def loadAuth(path):
+    """ Load guthub api token form file
+    
+    :param path: File's path
+    :type path: string
+    :return: token
+    :rtype: string
+    """
+
     try:
         config = configparser.ConfigParser()
         config.read(path)
@@ -15,8 +23,15 @@ def loadAuth(path):
         sys.exit(1)
 
 
-# Parse labels config
 def loadLabels(path):
+    """Load Labels from config file
+    
+    :param path: Labels's path
+    :type path: string
+    :return: Lables
+    :rtype: dict
+    """
+
     try:
         config = configparser.ConfigParser()
         config.read(path)
@@ -29,8 +44,15 @@ def loadLabels(path):
         sys.exit(1)
 
 
-# Parse reposlugs
 def parseReposlugs(reposlugs):
+    """Split reposlugs to user repo pair
+    
+    :param reposlugs: Reposlugs
+    :type reposlugs: list
+    :return: user repo pairs
+    :rtype: list
+    """
+
     result = []
     for reposlug in reposlugs:
         tmp = reposlug.split('/')
@@ -47,14 +69,33 @@ def parseReposlugs(reposlugs):
 @click.option('-b', '--base', 'branch', default=None, metavar="BRANCH", help='Filter pulls by base (PR target) branch name.')
 @click.option('-a', '--config-auth', 'auth', type=click.File('rb'), required=True, help='File with authorization configuration.')
 @click.option('-l', '--config-labels', 'label', type=click.File('rb'), required=True, help=' File with labels configuration.')
+@click.option('-x', '--async', 'asyncFlag',  is_flag=True, help='Use asynchronnous (faster) logic.')
 @click.argument('reposlugs', nargs=-1)
-def main(state, delete, branch, auth, label, reposlugs):
-    """CLI tool for filename-pattern-based labeling of GitHub PRs"""
+def main(state, delete, branch, auth, label, asyncFlag, reposlugs):
+    """
+    CLI tool for filename-pattern-based labeling of GitHub PRs
+    """
     reposlug = parseReposlugs(reposlugs)
 
     token = loadAuth(auth.name)
     labels = loadLabels(label.name)
-    github = GitHub(token)
+    
+    async def task():
+        github = GitHubAsync(token)
+        futures=[]
+        for item in reposlug:
+            future = asyncio.ensure_future(github.processRepo(item[0], item[1], state, branch, labels, delete))
+            futures.append(future)
 
-    for item in reposlug:
-        github.processRepo(item[0], item[1], state, branch, labels, delete)
+        for item in futures:
+            click.echo(await item)
+
+    if asyncFlag:
+        loop = asyncio.get_event_loop()
+        result = loop.run_until_complete(task())
+        loop.close()
+    else:
+        github = GitHub(token)
+        for item in reposlug:
+            github.processRepo(item[0], item[1], state, branch, labels, delete)
+
