@@ -5,10 +5,15 @@ import sys
 import asyncio
 from .github import GitHub,GitHubAsync
 
-# Parse auth config
-
-
 def loadAuth(path):
+    """ Load guthub api token form file
+    
+    :param path: File's path
+    :type path: string
+    :return: token
+    :rtype: string
+    """
+
     try:
         config = configparser.ConfigParser()
         config.read(path)
@@ -18,8 +23,15 @@ def loadAuth(path):
         sys.exit(1)
 
 
-# Parse labels config
 def loadLabels(path):
+    """Load Labels from config file
+    
+    :param path: Labels's path
+    :type path: string
+    :return: Lables
+    :rtype: dict
+    """
+
     try:
         config = configparser.ConfigParser()
         config.read(path)
@@ -32,8 +44,15 @@ def loadLabels(path):
         sys.exit(1)
 
 
-# Parse reposlugs
 def parseReposlugs(reposlugs):
+    """Split reposlugs to user repo pair
+    
+    :param reposlugs: Reposlugs
+    :type reposlugs: list
+    :return: user repo pairs
+    :rtype: list
+    """
+
     result = []
     for reposlug in reposlugs:
         tmp = reposlug.split('/')
@@ -53,7 +72,9 @@ def parseReposlugs(reposlugs):
 @click.option('-x', '--async', 'asyncFlag',  is_flag=True, help='Use asynchronnous (faster) logic.')
 @click.argument('reposlugs', nargs=-1)
 def main(state, delete, branch, auth, label, asyncFlag, reposlugs):
-    """CLI tool for filename-pattern-based labeling of GitHub PRs"""
+    """
+    CLI tool for filename-pattern-based labeling of GitHub PRs
+    """
     reposlug = parseReposlugs(reposlugs)
 
     token = loadAuth(auth.name)

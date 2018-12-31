@@ -9,10 +9,17 @@ import aiohttp
 import re
 from urllib import parse
 
-
-# Match file with label rules
-# return list
 def getLabels(source, path):
+    """Get all labels for given path
+    
+    :param source: Labels definition
+    :type path: dict
+    :param path: File full path
+    :type path: string
+    :return: Labels
+    :rtype: list[string]
+    """
+
     result = []
     for label, patterns in source.items():
         for pattern in patterns:
@@ -23,6 +30,16 @@ def getLabels(source, path):
 
 
 def getPagesAddress(next, last):
+    """Get GitHub all Page links from next and last link
+    
+    :param next: next link
+    :type next: string
+    :param last: last link
+    :type last: string
+    :return: links
+    :rtype: string
+    """
+
     try:
         parsed = parse.urlparse(str(next))
         nextPage = int(parse.parse_qs(
@@ -41,11 +58,16 @@ def getPagesAddress(next, last):
     except Exception as err:
         print(err)
 
-# Format all OK,FAIL,PR,REPO words
-# return string with click style
-
-
 def format(text):
+    """Format all OK,FAIL,PR,REPO words
+    
+    :param text: word
+    :type text: string
+    :raises Exception: Unknown text
+    :return: formated click style text
+    :rtype: string
+    """
+
     text = text.lower()
     if text == "ok":
         return click.style('OK', fg='green', bold=True)
@@ -60,24 +82,39 @@ def format(text):
 
 
 class GitHubAsync:
+    """
+    GitHub object for async PRs labeling 
+    """
 
     BASE_URL = "https://api.github.com/"
-    PER_PAGE = 100
+    """
+    GitHub API URL
+    """
+
 
     def __init__(self, token):
+        """GH constructor
+        
+        :param token: github api token
+        :type token: string
+        """
+
         self.token = token
         self.getUserName()
 
-    # Get UserName From token
     def getUserName(self):
+        """
+        Get Username from token
+        """
         response = self.createSession().get(self.BASE_URL+"user")
         if not response.ok:
             raise Exception("Cannot get username")
         self.username = response.json()['login']
 
-    # Create session with predefined github auth header
-    # return session
     def createSession(self):
+        """
+        Create Session with predefined github auth header
+        """
         session = requests.Session()
 
         def token_auth(req):
@@ -87,12 +124,32 @@ class GitHubAsync:
         return session
 
     def createAsyncSession(self):
+        """
+        Create Async Session with predefined github auth header
+        """
         session = aiohttp.ClientSession(
             headers={"Authorization": F'token {self.token}'}, connector=aiohttp.TCPConnector(verify_ssl=False))
         return session
 
-    # Process labels for selected repo
     async def processRepo(self, user, repo, state, base, labels, delete):
+        """Async Label all PRs in given repo
+        
+        :param user: Repo's owner
+        :type user: string
+        :param repo: Repo name
+        :type repo: string
+        :param state: Filter PR state (open|close|all)
+        :type state: string
+        :param base: Filter by base name
+        :type base: string or none
+        :param labels: Labels
+        :type labels: dict
+        :param delete: Delete if additional label exist
+        :type delete: bool
+        :return: Text output
+        :rtype: string
+        """
+
         stdout = ''
         try:
             PRs = await self.getPR(user, repo, state, base)
@@ -112,9 +169,22 @@ class GitHubAsync:
 
         return stdout.rstrip()
 
-    # Get pull request for repo
-    # Return pull request object
+    
     async def getPR(self, user, repo, state, base):
+        """Async Get PRs for given repo
+        
+        :param user: Repo's owner
+        :type user: string
+        :param repo: Repo name
+        :type repo: string
+        :param state: Filter PR state (open|close|all)
+        :type state: string
+        :param base: Filter by base name
+        :type base: string or none
+        :raises Exception: PRs get failed
+        :return: PRs
+        :rtype: list of prs
+        """
 
         reqParams = {'per_page': 100}
         if state is not None:
@@ -148,15 +218,35 @@ class GitHubAsync:
         return PRs
 
     async def getJson(self, address):
+        """Download and parse JSON
+        
+        :param address: Address of endpoint
+        :type address: string
+        :raises Exception: Get failed
+        :return: downloaded object
+        :rtype: dict
+        """
+
         async with self.createAsyncSession() as session:
             async with session.get(address) as response:
                 if response.status != 200:
                     raise Exception("Get failed")
                 return await response.json()
 
-    # Process label for selected pull request
 
     async def processPR(self, pr, labels, delete):
+        """Async Set correct labels for PR
+        
+        :param pr: PR
+        :type pr: PR object
+        :param labels: Labels
+        :type labels: dict
+        :param delete: Delete if additional label exist
+        :type delete: bool
+        :return: Text output
+        :rtype: string
+        """
+
         stdout = ''
         try:
             files = await self.getPRFiles(pr)
@@ -209,9 +299,16 @@ class GitHubAsync:
                                                   pr['html_url'], format("fail"))+'\n'
         return stdout
 
-    # Replace old labels for pull request
-
     async def updateLabels(self, pr, labels):
+        """Async Set labels for PR
+        
+        :param pr: PR
+        :type pr: PR object
+        :param labels: labels
+        :type labels: list
+        :raises Exception: Settings failed
+        """
+
         data = list(labels)
         url = F"{pr['issue_url']}/labels"
 
@@ -221,9 +318,17 @@ class GitHubAsync:
                 if response.status != 200:
                     raise Exception("Update labels failed")
 
-    # Get files assosciated with pull requst
-    # return file objects
+
     async def getPRFiles(self, pr):
+        """Async Get All Files for PR
+        
+        :param pr: PR
+        :type pr: PR object
+        :raises Exception: Get Failed
+        :return: Files objects
+        :rtype: list
+        """
+
         url = F"{pr['url']}/files"
         files = []
         reqParams = {'per_page': 100}
@@ -246,26 +351,41 @@ class GitHubAsync:
         for future in futures:
             files.extend(await future)
         return files
+
+
 class GitHub:
+    """
+    GitHub object for PRs labeling 
+    """
 
     BASE_URL = "https://api.github.com/"
-    PER_PAGE = 100
+    """
+    GitHub API URL
+    """
 
     def __init__(self, token):
+        """GH constructor
+        
+        :param token: github api token
+        :type token: string
+        """
         self.token = token
         self.session = self.createSession()
         self.getUserName()
 
-    # Get UserName From token
     def getUserName(self):
+        """
+        Get Username from token
+        """
         response = self.session.get(self.BASE_URL+"user")
         if not response.ok:
             raise Exception("Cannot get username")
-        self.username = response.json()['login'];
-    
-    # Create session with predefined github auth header
-    # return session
+        self.username = response.json()['login']
+
     def createSession(self):
+        """
+        Create Session with predefined github auth header
+        """
         session = requests.Session()
 
         def token_auth(req):
@@ -274,8 +394,23 @@ class GitHub:
         session.auth = token_auth
         return session
 
-    # Process labels for selected repo
+    
     def processRepo(self, user, repo, state, base, labels, delete):
+        """Label all PRs in given repo
+        
+        :param user: Repo's owner
+        :type user: string
+        :param repo: Repo name
+        :type repo: string
+        :param state: Filter PR state (open|close|all)
+        :type state: string
+        :param base: Filter by base name
+        :type base: string or none
+        :param labels: Labels
+        :type labels: dict
+        :param delete: Delete if additional label exist
+        :type delete: bool
+        """
         try:
 
             PRs = self.getPR(user, repo, state, base)
@@ -289,9 +424,20 @@ class GitHub:
             click.echo("{} {} - {}".format(format("repo"),
                                            F"{user}/{repo}", format("fail")))
 
-    # Get pull request for repo
-    # Return pull request object
+
     def getPR(self, user, repo, state, base):
+        """Get PRs for given repo
+        
+        :param user: Repo's owner
+        :type user: string
+        :param repo: Repo name
+        :type repo: string
+        :param state: Filter PR state (open|close|all)
+        :type state: string
+        :param base: Filter by base name
+        :type base: string or none
+        :raises Exception: PRs get failed
+        """
 
         reqParams = {'per_page': 100}
         if state is not None:
@@ -317,8 +463,16 @@ class GitHub:
 
             url = response.links["next"]["url"]
 
-    # Process label for selected pull request
     def processPR(self, pr, labels, delete):
+        """Set correct labels for PR
+        
+        :param pr: PR
+        :type pr: PR object
+        :param labels: Labels
+        :type labels: dict
+        :param delete: Delete if additional label exist
+        :type delete: bool
+        """
         try:
             files = self.getPRFiles(pr)
             calculatedLabels = set()
@@ -368,18 +522,31 @@ class GitHub:
             click.echo("  {} {} - {}".format(format("pr"),
                                              pr['html_url'], format("fail")))
 
-    # Replace old labels for pull request
-
+    
     def updateLabels(self, pr, labels):
+        """Set labels for PR
+        
+        :param pr: PR
+        :type pr: PR object
+        :param labels: labels
+        :type labels: list
+        :raises Exception: Settings failed
+        """
         data = list(labels)
         url = F"{pr['issue_url']}/labels"
         response = self.session.put(url, json=data)
         if not response.ok:
             raise Exception("Update labels failed")
 
-    # Get files assosciated with pull requst
-    # return file objects
     def getPRFiles(self, pr):
+        """Async Get All Files for PR
+        
+        :param pr: PR
+        :type pr: PR object
+        :raises Exception: Get Failed
+        :return: Files objects
+        :rtype: list
+        """
         url = F"{pr['url']}/files"
         files = []
         reqParams = {'per_page': 100}
