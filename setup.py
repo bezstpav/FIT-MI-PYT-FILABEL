@@ -7,7 +7,7 @@ with open('README.rst') as f:
 
 setup(
     name='filabel-bezstpav',
-    version='0.3.1',
+    version='0.6.0',
     description='PRs label tool',
     long_description=long_description,
     author='Pavel Bezstarosti',
